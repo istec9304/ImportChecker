@@ -1,0 +1,123 @@
+-- Generate WIMS Data for the Month
+select fn_proc_wims_all_day_new_2('d')
+
+
+
+-- Delete just duplicate customer records from WIMS data
+DELETE FROM tb_m1_ext_wims_day
+WHERE ctid IN (
+    SELECT ctid
+    FROM (
+        SELECT ctid,
+               ROW_NUMBER() OVER (PARTITION BY suy_no ORDER BY ctid) AS rn
+        FROM tb_m1_ext_wims_day
+        WHERE nabgidate = '20250630'
+    ) sub
+    WHERE rn > 1
+);
+
+-- Check for duplicate rows on specific nabgidate only
+SELECT *
+FROM (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY suy_no ORDER BY ctid) AS rn
+    FROM tb_m1_ext_wims_day
+    WHERE nabgidate = '20250630'
+) sub
+WHERE rn > 1;
+
+select * from tb_m1_ext_wims_day where nabgidate = '20250630' -- checked result = 17183/17214 rows on 05/25
+
+select * from tb_m1_ext_wims_day WHERE nabgidate = '20250630' and nowgumdate > '20250511'
+
+
+
+
+-- Insert one test row into the WIMS table, Only for Test
+INSERT INTO tb_m1_ext_wims_day (
+  nabgidate,
+  citycd,
+  suy_no,
+  jawoncd,
+  serno,
+  gumjugi,
+  nowgumdate,
+  nowgumcode,
+  nowgumchim,
+  nowgumqty,
+  nowused,
+  nowgumkind,
+  stscod,
+  trsusr
+)
+VALUES (
+  '20250630',         -- 납기일
+  '2',                -- 구코드 (citycd)
+  'TEST_50001000',     -- 수용가번호 (suy_no)
+  '1',                -- 자원코드
+  '01',               -- 부번호
+  '0',                -- 검침주기
+  '20250427',         -- 당월검침일
+  '1',                -- 검침코드 (정상)
+  1235,               -- 당월지침 (쉼표 없이 숫자만)
+  61,                 -- 당월검침량
+  61,                 -- 당월사용량
+  '3',                -- 검침방식코드
+  '0',                -- 상태코드
+  'ISTEC1'            -- 변경자
+);
+
+
+
+
+-- Insert rows only if not already present (avoid duplicates)
+INSERT INTO tb_m1_ext_wims_day (
+  nabgidate, citycd, suy_no, jawoncd, serno, gumjugi,
+  nowgumdate, nowgumcode, nowgumchim, nowgumqty, nowused,
+  nowgumkind, stscod, trsusr
+)
+SELECT *
+FROM (
+  VALUES
+    ('20250630', '2', '004167050000', '1', '01', '0', '20250512', '1', 480      , 			17        	,		17        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166040006', '1', '01', '0', '20250512', '1', 381      , 			14        	,		14        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166040007', '1', '01', '0', '20250512', '1', 272      , 			6         	,		6         ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '1', '009202440001', '1', '01', '0', '20250512', '1', 772      , 			15        	,		15        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '1', '009202440002', '1', '01', '0', '20250512', '1', 449      , 			18        	,		18        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '1', '009202440003', '1', '01', '0', '20250512', '1', 822      , 			18        	,		18        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166040008', '1', '01', '0', '20250512', '1', 56       , 			0         	,		0         ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050001', '1', '01', '0', '20250512', '1', 479      , 			20        	,		20        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050002', '1', '01', '0', '20250512', '1', 480      , 			25        	,		25        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050003', '1', '01', '0', '20250512', '1', 39       , 			1         	,		1         ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050004', '1', '01', '0', '20250512', '1', 360      , 			13        	,		13        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050005', '1', '01', '0', '20250512', '1', 450      , 			20        	,		20        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050006', '1', '01', '0', '20250512', '1', 129      , 			3         	,		3         ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050007', '1', '01', '0', '20250512', '1', 213      , 			12        	,		12        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166050008', '1', '01', '0', '20250512', '1', 338      , 			14        	,		14        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166070000', '1', '01', '0', '20250512', '1', 632      , 			20        	,		20        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166080000', '1', '01', '0', '20250512', '1', 763      , 			24        	,		24        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166080001', '1', '01', '0', '20250512', '1', 1660     ,			57        		,	57        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166100000', '1', '01', '0', '20250512', '1', 1267     ,			43        		,	43        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166140000', '1', '01', '0', '20250512', '1', 1757     ,			70        		,	70        ,'3'         ,'0'     ,'ISTEC1'),
+('20250630', '2', '004166150000', '1', '01', '0', '20250512', '1', 1318     ,			55        		,	55        ,'3'         ,'0'     ,'ISTEC1')
+) AS v(
+  nabgidate, citycd, suy_no, jawoncd, serno, gumjugi,
+  nowgumdate, nowgumcode, nowgumchim, nowgumqty, nowused,
+  nowgumkind, stscod, trsusr
+)
+-- 2025-05-25 EUSY1327 ADD A CONDITION TO PREVENT DUPLICATE ROW INSERTION
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM tb_m1_ext_wims_day d
+  WHERE
+    d.nabgidate = v.nabgidate
+    AND d.suy_no = v.suy_no
+    AND d.nowgumdate = v.nowgumdate
+);
+
+
+
+
+
+
+
