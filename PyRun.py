@@ -318,7 +318,7 @@ worksheet_name = "IN형식"
 df = read_google_sheet(sheet_url, credentials_path, worksheet_name)
 
 window = tk.Tk()
-window.title("임포트체커 + 통계 + 중복표시 (v250804)")
+window.title("임포트체커 + 통계 + 중복표시 (v250803)")
 window.geometry("1000x600")
 
 # 녹색 램프 프레임 (왼쪽 상단)
