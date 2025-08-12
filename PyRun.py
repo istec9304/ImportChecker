@@ -18,7 +18,7 @@ from tkinter import filedialog, messagebox
 from datetime import datetime
 from tkinter import ttk
 from openpyxl import load_workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 
 # 📌 엑셀 컬럼명 정의 (20개 항목)
 COLUMNS = [
@@ -197,102 +197,299 @@ def mark_duplicates_in_place():
             messagebox.showerror("열 없음", "'수용가번호' 열이 존재하지 않습니다.")
             return
 
-        duplicated = df['수용가번호'][df['수용가번호'].duplicated(keep=False)]
-        if duplicated.empty:
-            messagebox.showinfo("중복 없음", "중복된 수용가번호가 없습니다.")
-            return
-
         # 진행상태 창 생성
         progress_window = tk.Toplevel()
-        progress_window.title("중복 표시 진행상태")
-        progress_window.geometry("400x150")
+        progress_window.title("중복 검사 및 표시 진행상태")
+        progress_window.geometry("500x200")
         progress_window.transient(window)
         progress_window.grab_set()
 
         # 프로그레스바
-        progress_label = tk.Label(progress_window, text="중복 수용가번호 적색 표시 중...")
+        progress_label = tk.Label(progress_window, text="중복 항목 검사 및 적색 표시 중...")
         progress_label.pack(pady=(20, 10))
         
-        progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
+        progress_bar = ttk.Progressbar(progress_window, length=400, mode='determinate')
         progress_bar.pack(pady=(0, 10))
         
         status_label = tk.Label(progress_window, text="")
         status_label.pack(pady=(0, 10))
+        
+        detail_label = tk.Label(progress_window, text="")
+        detail_label.pack(pady=(0, 10))
 
+        # 중복 검사할 항목들 정의 (지시부번호는 단말 주번호와 동일)
+        duplicate_checks = [
+            ('수용가번호', '수용가번호'),
+            ('계량기번호', '계량기번호'),
+            ('단말 주번호', '지시부번호/단말 주번호'),
+            ('단말 부번호', '단말 부번호'),
+            ('IMEI', 'IMEI'),
+            ('패스워드', '패스워드')
+        ]
+        
+        # 수용가상태 검사할 값들
+        status_checks = ['단수', '중지', '철거', '폐전']
+        
+        # 자릿수 검사할 항목들 (컬럼명, 최소자릿수, 최대자릿수)
+        digit_checks = [
+            ('수용가번호', 13, 13),      # 수용가번호는 정확히 13자리
+            ('계량기번호', 5, 20),      # 계량기번호는 보통 5-20자리
+            ('단말 주번호', 5, 15),     # 단말 주번호는 보통 5-15자리
+            ('IMEI', 15, 15),          # IMEI는 정확히 15자리
+            ('패스워드', 4, 20)         # 패스워드는 보통 4-20자리
+        ]
+        
+        # 실제 존재하는 컬럼만 필터링
+        available_checks = []
+        for col_name, display_name in duplicate_checks:
+            if col_name in df.columns:
+                available_checks.append((col_name, display_name))
+        
+        if not available_checks:
+            messagebox.showerror("오류", "검사할 수 있는 컬럼이 없습니다.")
+            return
+
+        # 중복된 행들의 인덱스 수집
+        duplicate_rows = set()
+        duplicate_stats = {}
+        duplicate_details = {}
+        
+        # 수용가상태 문제 행들의 인덱스 수집
+        status_problem_rows = set()
+        
+        # 빈값/자릿수 문제 셀들의 위치 수집 (행, 열, 문제유형)
+        cell_problems = []  # [(row_idx, col_name, problem_type, value), ...]
+        cell_problem_stats = {}
+        
+        total_checks = len(available_checks)
+        progress_bar['maximum'] = total_checks
+        
+        for check_idx, (col_name, display_name) in enumerate(available_checks):
+            status_label.config(text=f"검사 중: {display_name}")
+            detail_label.config(text=f"진행률: {check_idx + 1}/{total_checks}")
+            progress_bar['value'] = check_idx + 1
+            progress_window.update()
+            
+            # 중복 검사
+            duplicated = df[col_name][df[col_name].duplicated(keep=False)]
+            if not duplicated.empty:
+                # 중복된 값들을 가진 행들의 인덱스 수집
+                duplicated_indices = df[df[col_name].duplicated(keep=False)].index
+                duplicate_rows.update(duplicated_indices)
+                duplicate_stats[display_name] = len(duplicated)
+                
+                # 중복된 값들의 목록 저장 (상위 10개만)
+                duplicated_values = duplicated.unique()
+                duplicate_details[display_name] = duplicated_values[:10].tolist()
+        
+        # 수용가상태 검사
+        if '수용가상태' in df.columns:
+            status_label.config(text="수용가상태 검사 중...")
+            detail_label.config(text="단수, 중지, 철거, 폐전 검사")
+            progress_window.update()
+            
+            for status_value in status_checks:
+                status_indices = df[df['수용가상태'] == status_value].index
+                status_problem_rows.update(status_indices)
+        
+        # 빈값 및 자릿수 검사
+        status_label.config(text="빈값 및 자릿수 검사 중...")
+        detail_label.config(text="셀별 문제 검사")
+        progress_window.update()
+        
+        # 빈값 검사
+        empty_count = 0
+        for col_name in ['수용가번호', '계량기번호', '단말 주번호', 'IMEI']:
+            if col_name in df.columns:
+                empty_indices = df[df[col_name] == ''].index
+                for idx in empty_indices:
+                    cell_problems.append((idx, col_name, '빈값', ''))
+                    empty_count += 1
+        
+        if empty_count > 0:
+            cell_problem_stats['빈값'] = empty_count
+        
+        # 자릿수 검사
+        digit_count = 0
+        for col_name, min_digits, max_digits in digit_checks:
+            if col_name in df.columns:
+                for idx, row in df.iterrows():
+                    value = str(row[col_name])
+                    if value and value != '':
+                        if len(value) < min_digits or len(value) > max_digits:
+                            cell_problems.append((idx, col_name, '자릿수', value))
+                            digit_count += 1
+        
+        if digit_count > 0:
+            cell_problem_stats['자릿수'] = digit_count
+        
+        # 모든 문제가 있는 행들 통합
+        all_problem_rows = duplicate_rows.union(status_problem_rows)
+        
+        if not all_problem_rows:
+            messagebox.showinfo("문제 없음", "중복된 항목이나 문제가 있는 수용가상태가 없습니다.")
+            progress_window.destroy()
+            return
+
+        # 엑셀 파일에 색상 표시
+        status_label.config(text="엑셀 파일에 색상 표시 중...")
+        detail_label.config(text=f"총 {len(all_problem_rows)}개 행 처리")
+        progress_window.update()
+        
         wb = load_workbook(file_path)
         ws = wb.active
         headers = [cell.value for cell in ws[1]]
-        col_idx = headers.index('수용가번호') + 1  # 1-based
-        red_font = Font(color="FF0000")
-
-        total_rows = ws.max_row - 1  # 헤더 제외
-        progress_bar['maximum'] = total_rows
-
-        for row in range(2, ws.max_row + 1):
-            cell = ws.cell(row=row, column=col_idx)
-            if str(cell.value) in duplicated.values:
+        
+        # 색상 및 음영 정의
+        red_font = Font(color="FF0000")      # 적색: 수용가상태 문제
+        blue_font = Font(color="0000FF")     # 파란색: 중복 값
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")  # 노란색 음영
+        
+        # 수용가상태 문제 행들을 적색으로 표시 (행 전체)
+        for row_idx in status_problem_rows:
+            excel_row = row_idx + 2  # pandas는 0-based, excel은 1-based + 헤더
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=excel_row, column=col)
                 cell.font = red_font
+        
+        # 중복된 값이 있는 셀들을 노란색 음영으로 표시 (셀별)
+        for col_name, display_name in available_checks:
+            if col_name in df.columns:
+                duplicated_values = df[col_name][df[col_name].duplicated(keep=False)]
+                if not duplicated_values.empty:
+                    duplicated_indices = df[df[col_name].duplicated(keep=False)].index
+                    
+                    # 헤더에서 해당 컬럼의 위치 찾기
+                    try:
+                        col_idx = headers.index(col_name) + 1
+                        # 중복된 값이 있는 셀들만 노란색 음영으로 표시
+                        for row_idx in duplicated_indices:
+                            excel_row = row_idx + 2  # pandas는 0-based, excel은 1-based + 헤더
+                            cell = ws.cell(row=excel_row, column=col_idx)
+                            cell.fill = yellow_fill
+                    except ValueError:
+                        # 컬럼이 존재하지 않는 경우 무시
+                        pass
+        
+        # 빈값/자릿수 문제 셀들을 노란색 음영으로 표시
+        for row_idx, col_name, problem_type, value in cell_problems:
+            excel_row = row_idx + 2  # pandas는 0-based, excel은 1-based + 헤더
             
-            # 진행상태 업데이트
-            progress_bar['value'] = row - 1
-            status_label.config(text=f"처리 중: {row-1}/{total_rows} 행")
-            progress_window.update()
-
+            # 헤더에서 해당 컬럼의 위치 찾기
+            try:
+                col_idx = headers.index(col_name) + 1
+                cell = ws.cell(row=excel_row, column=col_idx)
+                cell.fill = yellow_fill
+            except ValueError:
+                # 컬럼이 존재하지 않는 경우 무시
+                pass
+        
         wb.save(file_path)
         progress_window.destroy()
         
-        # 필터링 옵션 제공
-        response = messagebox.askyesno("필터링 옵션", 
-                                     f"중복 수용가번호가 적색으로 표시되어 저장되었습니다.\n\n"
-                                     f"중복된 수용가번호만 포함된 새 파일을 생성하시겠습니까?")
+        # 통계 표시
+        stats_text = "🔍 검사 결과:\n\n"
+        
+        # 중복 통계
+        if duplicate_stats:
+            stats_text += "📊 중복 항목:\n"
+            for display_name, count in duplicate_stats.items():
+                stats_text += f"  🔵 중복 {display_name}: {count}개\n"
+                if display_name in duplicate_details:
+                    details = duplicate_details[display_name]
+                    if len(details) > 0:
+                        stats_text += "     중복 값 예시: " + ", ".join(str(x) for x in details[:5])
+                        if len(details) > 5:
+                            stats_text += f" ... 외 {len(details) - 5}개"
+                        stats_text += "\n"
+        
+        # 수용가상태 통계
+        if status_problem_rows:
+            status_counts = {}
+            for status_value in status_checks:
+                if '수용가상태' in df.columns:
+                    count = len(df[df['수용가상태'] == status_value])
+                    if count > 0:
+                        status_counts[status_value] = count
+            
+            if status_counts:
+                stats_text += "\n📊 수용가상태 문제:\n"
+                for status_value, count in status_counts.items():
+                    stats_text += f"  🔴 {status_value}: {count}개\n"
+        
+        # 셀별 문제 통계
+        if cell_problem_stats:
+            stats_text += "\n📊 셀별 문제:\n"
+            for problem_type, count in cell_problem_stats.items():
+                stats_text += f"  🟡 {problem_type}: {count}개\n"
+        
+        stats_text += f"\n총 {len(all_problem_rows)}개 행이 색상으로 표시되었습니다."
+        stats_text += f"\n🟡 노란색 음영: 중복 항목 ({len(duplicate_rows)}개)"
+        stats_text += f"\n🔴 적색: 수용가상태 문제 ({len(status_problem_rows)}개)"
+        stats_text += f"\n🟡 노란색 음영: 빈값/자릿수 문제 ({len(cell_problems)}개)"
+        
+                # 시트 추가 옵션 제공
+        response = messagebox.askyesno("검사 완료", 
+                                      f"{stats_text}\n\n"
+                                      f"원본 파일에 '중복항목' 시트를 추가하시겠습니까?")
         
         if response:
-            create_filtered_file(file_path, duplicated.values)
+            create_filtered_file(file_path, list(all_problem_rows), df)
 
     except Exception as e:
         messagebox.showerror("오류", str(e))
 
-def create_filtered_file(original_file_path, duplicated_values):
-    """중복된 수용가번호만 포함된 새 파일 생성"""
+def create_filtered_file(original_file_path, duplicate_row_indices, original_df):
+    """원본 파일에 중복 항목 시트 추가"""
     try:
-        # 원본 파일 읽기
-        df = pd.read_excel(original_file_path, dtype=str).fillna('')
-        
-        # 중복된 수용가번호만 필터링
-        filtered_df = df[df['수용가번호'].isin(duplicated_values)].copy()
+        # 중복된 행들만 필터링
+        filtered_df = original_df.iloc[duplicate_row_indices].copy()
         
         if filtered_df.empty:
-            messagebox.showinfo("결과", "중복된 수용가번호가 없습니다.")
+            messagebox.showinfo("결과", "중복된 항목이 없습니다.")
             return
         
-        # 새 파일명 생성
-        file_dir = os.path.dirname(original_file_path)
-        file_name = os.path.basename(original_file_path)
-        name, ext = os.path.splitext(file_name)
-        new_file_path = os.path.join(file_dir, f"{name}_중복수용가만{ext}")
+        # 원본 파일 열기
+        wb = load_workbook(original_file_path)
         
-        # 파일 저장
-        with pd.ExcelWriter(new_file_path, engine='openpyxl') as writer:
-            filtered_df.to_excel(writer, index=False, sheet_name='중복수용가')
-            
-            # 중복 수용가번호 적색 표시
-            wb = writer.book
-            ws = wb['중복수용가']
-            
-            # 헤더에서 수용가번호 열 찾기
-            headers = [cell.value for cell in ws[1]]
-            col_idx = headers.index('수용가번호') + 1
-            red_font = Font(color="FF0000")
-            
-            # 중복된 행들 적색 표시
-            for row in range(2, ws.max_row + 1):
-                cell = ws.cell(row=row, column=col_idx)
+        # 기존에 '중복항목' 시트가 있다면 삭제
+        if '중복항목' in wb.sheetnames:
+            wb.remove(wb['중복항목'])
+        
+        # 새 시트 생성
+        ws_new = wb.create_sheet('중복항목')
+        
+        # 헤더 복사 (첫 번째 시트에서)
+        ws_original = wb.active
+        headers = []
+        for col in range(1, ws_original.max_column + 1):
+            header_value = ws_original.cell(row=1, column=col).value
+            headers.append(header_value)
+            ws_new.cell(row=1, column=col, value=header_value)
+        
+        # 데이터 복사
+        for row_idx, original_row_idx in enumerate(duplicate_row_indices, 2):
+            excel_row = original_row_idx + 2  # pandas는 0-based, excel은 1-based + 헤더
+            for col in range(1, ws_original.max_column + 1):
+                cell_value = ws_original.cell(row=excel_row, column=col).value
+                ws_new.cell(row=row_idx, column=col, value=cell_value)
+        
+        # 중복된 행들 전체를 적색으로 표시
+        red_font = Font(color="FF0000")
+        
+        # 모든 행을 적색으로 표시 (행 전체)
+        for row in range(2, ws_new.max_row + 1):
+            for col in range(1, ws_new.max_column + 1):
+                cell = ws_new.cell(row=row, column=col)
                 cell.font = red_font
         
-        messagebox.showinfo("완료", f"중복 수용가번호만 포함된 파일이 생성되었습니다:\n{new_file_path}")
+        # 파일 저장
+        wb.save(original_file_path)
+        
+        messagebox.showinfo("완료", f"원본 파일에 '중복항목' 시트가 추가되었습니다.\n총 {len(duplicate_row_indices)}개 행이 포함되었습니다.")
         
     except Exception as e:
-        messagebox.showerror("필터링 오류", str(e))
+        messagebox.showerror("시트 추가 오류", str(e))
 
 def read_google_sheet(sheet_url, credentials_path, worksheet_name):
     gc = gspread.service_account(filename=credentials_path)
@@ -373,7 +570,7 @@ btn_sql.pack(pady=(10, 5))
 btn_analyze = tk.Button(window, text="엑셀 파일 선택 및 수용가 통계 분석", command=analyze_excel_customer_stats, bg="lightgreen")
 btn_analyze.pack(pady=(0, 5))
 
-btn_dup = tk.Button(window, text="중복 수용가번호 적색 표시", command=mark_duplicates_in_place, bg="salmon")
+btn_dup = tk.Button(window, text="🔍 종합검사 (적색/노란색 음영 표시)", command=mark_duplicates_in_place, bg="salmon")
 btn_dup.pack(pady=(0, 10))
 
 frame = tk.Frame(window)
